@@ -132,7 +132,7 @@ You can lower P to reduce the oscillations, but reduce it too much and your quad
 
 ## I-Term (integral)
 
-I term determines **how hard the FC works to hold the drone’s attitude against external forces**, such as wind and off-centered CG.
+I-term determines **how hard the FC works to hold the drone’s attitude against external forces**, such as wind and off-centered CG.
 
 Think of it as the stiffness setting in the stall motion of your quadcopter, and how well it holds its attitude.
 
@@ -173,7 +173,7 @@ Another side effect of **excessive D-term is the decrease in the quad’s respon
 - Proportional to the _change in magnitude_ of error
 - Anticipates the _future state_ of the system based on its current movement
 - It reduces the P-term overshoot and oscillation (_damping effect_)
-- But accelerates the P term too!
+- But accelerates the P-term too!
 
 - _Amplifies noise_ (vibration) in the system
   1.  motors make vibrations
@@ -231,21 +231,19 @@ D -> High values dampen the P (works against P, flattens the curve) D-term relat
   - solid attitude hold on throttle change
 - the main maneuvers I use to tune are sharp turns, flips and rolls, and throttle punches
 
-## PID Tuning (borrowed from Betaflight's manual)
-
-[Guide](PID-Tuning-Guide)
+## PID Tuning Process
 
 Start with slightly lower than default P gains as provided by the installed BetaFlight firmware. P of 4.0 on Pitch and Roll are good starting points. Also lower the I and D gains on pitch and roll in order to tune P with minimal interference from I and D. I of 20 and D of 5 are good starting points. For yaw, it is prudent to decrease default P by HALF and reduce I just a bit, to eliminate that axis as a source of oscillations. Yaw will be tuned last.
 
-Over a series of flights, increase P gain on Roll axis until you see oscillations when you approach full throttle and you get very rapid visible and audible shakes. Then set P term to roughly 70% of the value that caused the oscillations.
+Over a series of flights, increase P gain on Roll axis until you see oscillations when you approach full throttle and you get very rapid visible and audible shakes. Then set P-term to roughly 70% of the value that caused the oscillations.
 
 Test to see if the quad holds the desired roll angle and does not drift by rolling the copter to a specific angle, and then punch and drop throttle several times. The angle you gave it relative to the horizon should not change significantly. If the angle appears to drift, increase I gain. If you don't see drift, don't change I. You can change the "feel" of your copter by raising or lowering I after you achieve a good tune. (I does not really affect final P and D values.
 
 Increase D gain on each axis ONLY to the extent that it helps reduce bounceback after flips/rolls or prop-wash oscillations after an abrupt descent. If neither is a problem, then LEAVE D LOW. At this point the Copter should be around 80-90% tuned.
 
-Note: Too high of D term can cause motors to get hot. Do a short flight, 10-30 seconds, land and check motors. If you can hold your finger on the motors then they are not too hot.
+Note: Too high of D-term can cause motors to get hot. Do a short flight, 10-30 seconds, land and check motors. If you can hold your finger on the motors then they are not too hot.
 
-Yaw often requires the least tuning, but it may still introduce significant oscillation if you ignore it. Start with the Yaw P that you chopped in half in step one and verify that you do not get significant vibrations when you do a long punch-out or fast forward flight. Start pushing up Yaw P by .5 increments until you start to see roughness through your fpv camera when in fast forward flight or punches. Then decrease a bit. Fine tune by looking at Yaw P term in blackbox. It MAY be oscillating a bit, but pull up the Yaw gyro trace to see if those P oscillations actually make it to the Gyro. If the yaw gyro looks relatively smooth, you're ok.
+Yaw often requires the least tuning, but it may still introduce significant oscillation if you ignore it. Start with the Yaw P that you chopped in half in step one and verify that you do not get significant vibrations when you do a long punch-out or fast forward flight. Start pushing up Yaw P by .5 increments until you start to see roughness through your fpv camera when in fast forward flight or punches. Then decrease a bit. Fine tune by looking at Yaw P-term in blackbox. It MAY be oscillating a bit, but pull up the Yaw gyro trace to see if those P oscillations actually make it to the Gyro. If the yaw gyro looks relatively smooth, you're ok.
 
 **Note:** Because yaw inherently has less positive control (a.k.a. authority), than pitch and roll, a wider range of values are acceptable. Relatively higher P and I values and relatively low D values are the norm because of the inherent lack of authority compared to pitch and roll. A blackbox log is usually necessary to fine-tune. Most excess P oscillation comes from either roll or pitch, but if any roughness at full throttle remains, look at a blackbox log to see if yaw P starts to oscillate on full throttle. If so, decrease yaw P.
 
@@ -504,7 +502,7 @@ Most motors take time to spin up / slow down. They need to be pushed harder at t
 
 ## I-term rotation
 
-Rotates the current I Term vector properly to other axes as the quad rotates when yawing continuously during rolls and when performing funnels and other tricks. Very appreciated by LOS acro pilots.
+Rotates the current I-term vector properly to other axes as the quad rotates when yawing continuously during rolls and when performing funnels and other tricks. Very appreciated by LOS acro pilots.
 
 ## I-term Relax
 
@@ -531,7 +529,7 @@ Integrated Yaw is a feature which corrects a fundamental issue with quad control
 
 ## I-term relax Type
 
-Limits the accumulation of I Term when fast movements happen. This helps specially to reduce the bounceback at the end of rolls and other fast movements. You can choose the axes in which this is active, and if the fast movement is detected using the Gyro or the Setpoint (stick).
+Limits the accumulation of I-term when fast movements happen. This helps specially to reduce the bounceback at the end of rolls and other fast movements. You can choose the axes in which this is active, and if the fast movement is detected using the Gyro or the Setpoint (stick).
 
 - **Gyro** = more for Freestyle pilots (good at bouncebacks, bad in turns)
   - uses a high-pass filter based on rate of change stick movements
@@ -551,20 +549,18 @@ Limits the accumulation of I Term when fast movements happen. This helps special
 Fixes the problem when you move throttle stick rapidly, to tilt the quad up or down the nose.
 `0 - 30`
 
-Anti Gravity boosts the I term when fast throttle changes are detected. Higher gain values provide stability and better attitude hold when you pump the throttle.
+Anti Gravity boosts the I-term when fast throttle changes are detected. Higher gain values provide stability and better attitude hold when you pump the throttle.
 
 - Throttle Mid 0.5
 - Throttle expo 0
 
 ## TPA (Throttle PID Attenuation)
 
-TPA is a setting to reduce the effectiveness of PD gains as throttle increases(only D-term by default).
+_TPA_ stands for Throttle PID Attenuation. It basically allows an aggressively tuned multi-rotor (one that feels very locked in) to reduce its PD gains when throttle is applied beyond the TPA threshold/breakpoint in order to eliminate fast oscillations.
 
-TPA basically allows an aggressively tuned multi-rotor (one that feels very locked in) to reduce its PID gains when throttle is applied beyond the TPA threshold/breakpoint in order to eliminate fast oscillations
-
-- tpa_mode: PD/D (Only acts on D-term by default)
-- tpa_rate: TPA 0.6 means 60% PIDs decrease on full throttle
-- tpa_breakpoint: TPA breakpoint 1250(25%) - throttle value at which TPA starts to work
+- `tpa_mode`: PD/D (Only acts on D-term by default)
+- `tpa_rate`: TPA 0.6 means 60% PIDs decrease on full throttle
+- `tpa_breakpoint`: TPA breakpoint 1250(25%) - throttle value at which TPA starts to work
 
 ![TPA](https://user-images.githubusercontent.com/15355893/165534786-978e3129-04e6-4943-9be0-bcc79ed3d622.png)
 
@@ -890,7 +886,7 @@ you can now use dynamic notch to watch something else (noise) than the motors (l
 Set Dyn filter range to "low"
 Q to 200
 
-Make a slight test flight, if motors cool or slightly warm you can reduce filter by move "Gyro Filter Multiplier" and "D term Filter multiplier" to the right (less filtering)
+Make a slight test flight, if motors cool or slightly warm you can reduce filter by move "Gyro Filter Multiplier" and "D-term Filter multiplier" to the right (less filtering)
 Do not use very new props (to prevent too less filtering)
 
 ##### you can use this too
@@ -979,7 +975,7 @@ set ff_interpolate_sp = AVERAGED_3 for Freestyle
 
 2 - If you are pitched and going forward and the angle of your pitch changes, Increase I on pitch. If the angle of the tilt is not holding, then increase I for roll.
 
-3 - Slow oscillations is too low P term
+3 - Slow oscillations is too low P-term
 
 4 - Punch throttle and cut. If there is movement then add anti-gravity gain.
 

@@ -481,7 +481,7 @@ A significant amount of the added performance available in Betaflight 4.X and be
 Betaflight supports all 32-bit ESCs currently available, with BLHeli_32 and AM32 configurations, as well as APD configurations being capable of supporting bidirectional DShot, and user-configured operation with bidirectional DShot disabled.
 Additional DShot extended telemetry will be implemented over time as demonstrated stable, however current extended telemetry options will only be enabled by user selection.
 
-BLHeli AS ceased operations in 2024. No new BLHeli_32 licenses have been issued, and users are no longer able to flash firmware. Manufacturers should no longer be shipping BLHeli_32 ESCs. There are several alternatives, including [AM32](https://am32.ca/) and [ESCape32](https://github.com/neoxic/ESCape32) that can be flashed to the same hardware and are fully supported by the open-source community.
+BLHeli AS ceased operations in 2024 (see [The End of BLHeli_32, Long Live AM32 — Hackaday](https://hackaday.com/2024/06/07/the-end-of-blheli_32-long-live-am32/)). No new BLHeli_32 licenses have been issued, and users are no longer able to flash firmware. Manufacturers should no longer be shipping BLHeli_32 ESCs. There are several alternatives, including [AM32](https://am32.ca/) and [ESCape32](https://github.com/neoxic/ESCape32) that can be flashed to the same hardware and are fully supported by the open-source community.
 
 ### 3.4.2 For 8-Bit ESCs (e.g. BLHeli_S, Bluejay)
 

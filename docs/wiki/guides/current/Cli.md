@@ -63,7 +63,6 @@ Betaflight CLI displays useful commands when the `help` command is entered. Belo
 | `serialpassthrough <id1> [<baud1>] [<mode1>] [none\|<dtr pinio>\|reset] [<id2>] [<baud2>] [<mode2>]`   | Passthrough serial data data from port 1 to VCP / port 2                   |
 | [`adjrange`](/docs/wiki/guides/current/Inflight-Adjustments)                                           | Configure in-flight adjustment ranges                                      |
 | `motor <index> [value]`                                                                                | Read or drive a motor (use with caution — props off)                       |
-| `dshot_telemetry_info`                                                                                 | Show DSHOT telemetry info and statistics                                   |
 | `dshotprog <index> <cmd>+`                                                                             | Send DSHOT ESC programming commands                                        |
 | `escprog <mode [sk/bl/ki/cc]> <index>`                                                                 | Passthrough ESC to serial                                                  |
 | [`gpspassthrough`](/docs/wiki/guides/current/Gps)                                                      | Passthrough GPS to serial                                                  |
@@ -77,7 +76,6 @@ Betaflight CLI displays useful commands when the `help` command is entered. Belo
 | `flash_info`                                                                                           | Show flash chip info                                                       |
 | `flash_scan`                                                                                           | Scan flash device for errors                                               |
 | `flash_erase`                                                                                          | Erase flash chip (deletes blackboxes)                                      |
-| `tasks`                                                                                                | Show task stats                                                            |
 | `timer <> \| <pin> list \| <pin> [af<alternate function>\|none\|<option(deprecated)>] \| list \| show` | Show/set timers                                                            |
 
 ### Backup and Restore
@@ -116,7 +114,7 @@ Scope annotations in the raw dump: `profile N` = per-PID-profile, `rateprofile N
 | `imu_dcm_kp`             | 2500    | 0–32000                                  | Complementary filter proportional gain. Controls how aggressively acc data is blended with gyro integration. Default is suitable for all normal use.                                                        |
 | `imu_dcm_ki`             | 0       | 0–32000                                  | Complementary filter integral gain. Non-zero allows slow acc-based yaw correction. Rarely changed.                                                                                                          |
 | `imu_process_denom`      | 2       | 1–4                                      | IMU attitude update rate divisor relative to gyro task rate. 2 = update every second gyro cycle. Higher values reduce CPU load at the cost of attitude accuracy.                                            |
-| `small_angle`            | 25      | 0–180                                    | Maximum tilt angle (degrees) to permit arming. Set to 180 to arm at any angle (not recommended). During PID tuning set to 30 for safe angle-mode indoor flights.                                            |
+| `small_angle`            | 25      | 0–180                                    | Maximum tilt angle (degrees) to permit arming — a pre-arm safety lock. Turtle/crash-flip mode re-arms while inverted, which requires `small_angle = 180` to work reliably.                                  |
 | `pid_process_denom`      | 1       | 1–16                                     | PID loop rate divisor relative to gyro rate. 1 = PID runs every gyro sample. For 8kHz gyro with denom=2 → 4kHz PID rate. Target: BMI270 → 3.2kHz (tune with denom accordingly); ICM-42688P/MPU-6000 → 8kHz. |
 | `gyro_cal_on_first_arm`  | OFF     | OFF, ON                                  | Recalibrates gyro on first arm after power-up. Useful if the FC warms up and gyro drifts before the first arm.                                                                                              |
 | `prearm_allow_rearm`     | OFF     | OFF, ON                                  | Allow re-arm without toggling the prearm switch between flights.                                                                                                                                            |
@@ -162,7 +160,7 @@ Tracks and eliminates frame resonances — visible as vertical stripes (fixed fr
 | ------------------ | ------- | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `dyn_notch_count`  | 3       | 0–7            | Number of independently tracked dynamic notches. **Set to 0 to disable** if no frame resonances are visible in the spectrum (eliminates delay). With RPM filtering active, 1–2 notches are sufficient for most frame resonances. Without RPM filtering, use 4–5. |
 | `dyn_notch_q`      | 300     | 1–1000         | Q factor — narrowness of each notch. Increase until the resonance just stays within the notch, then stop. Max useful value ~1000.                                                                                                                                |
-| `dyn_notch_min_hz` | 100     | 20–250         | Minimum frequency any notch will track. Set ~25 Hz below the lowest resonance you need to catch. **Never set below 150 Hz** without reason (ideally ≥200 Hz) — tracking low frequencies causes unwanted filtering of PID-relevant signals.                       |
+| `dyn_notch_min_hz` | 100     | 20–250         | Minimum frequency any notch will track. Set ~25 Hz below the lowest resonance you need to catch. **ideally >=150 Hz** unless blackbox shows a real resonance below that — tracking low frequencies causes unwanted filtering of PID-relevant signals.            |
 | `dyn_notch_max_hz` | 600     | 200–1000       | Maximum frequency any notch will track. Default 600 is fine for most builds. Narrowing the range improves notch resolution.                                                                                                                                      |
 
 Also see:
@@ -282,7 +280,11 @@ Also see:
 
 ### Simplified Tuning Sliders
 
-When simplified tuning is active, these intermediate values drive the actual PID/filter gains. Use `simplified_tuning apply` in CLI to compute and write the raw values. `simplified_tuning disable` zeroes the simplified system and leaves the raw values in place for manual editing.
+When simplified tuning is active, these intermediate values drive the actual PID/filter gains.
+
+**CLI workflow**: `set simplified_* = value` (one or more variables) → `simplified_tuning apply` → `save`. Setting variables without running `apply` leaves PID and filter gains stale — the FC does not auto-recalculate on boot, and Configurator's validation (MSP 145) will detect the mismatch and disable the slider UI with a warning.
+
+`simplified_tuning apply` recalculates PIDs **and** gyro/D-term filter Hz values for **all PID profiles**. `simplified_tuning disable` zeroes the simplified system and leaves the raw values in place for manual editing.
 
 | Variable                             | Default | Range                  | Description                                                                                                                    |
 | ------------------------------------ | ------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
@@ -378,7 +380,7 @@ Also see:
 | `angle_p_gain`                   | 50      | 0–200 (profile)    | P gain for angle mode self-leveling. Higher = stronger return to level.                                                                           |
 | `angle_feedforward`              | 50      | 0–200 (profile)    | Feedforward in angle mode — reduces lag when moving the angle setpoint.                                                                           |
 | `angle_feedforward_smoothing_ms` | 80      | 10–250 (profile)   | Smoothing applied to angle feedforward signal.                                                                                                    |
-| `angle_limit`                    | 60      | 10–80 (profile)    | Maximum tilt angle in angle mode (degrees).                                                                                                       |
+| `angle_limit`                    | 60      | 10–80 (profile)    | Maximum tilt angle in angle mode during flight-time (degrees).                                                                                    |
 | `angle_earth_ref`                | 100     | 0–100 (profile)    | Proportion of earth-frame reference used in angle mode (0 = body frame, 100 = full earth frame). 100 is recommended for GPS rescue compatibility. |
 | `angle_pitch_offset`             | 0       | −450–450 (profile) | Pitch trim offset in tenths of degrees for angle mode. Use to adjust the level hover point without reflying. _(Requires: `USE_WING`)_             |
 | `horizon_level_strength`         | 75      | 0–100              | Level mode strength at stick center in horizon mode.                                                                                              |
@@ -442,6 +444,8 @@ Also see:
 
 Requires bidirectional DSHOT (`dshot_bidir = ON`) and ESC firmware that supports it (BLHeli_32, AM32, BlueJay). Motor noise typically starts around 100 Hz and increases with throttle. Harmonics occur at 2× and 3× the fundamental.
 
+**Frequency formula**: `notch_Hz = mechanical_RPM × (motor_poles / 2) / 60`. Example: 14-pole motor at 20,000 RPM → 20000 × 7 / 60 ≈ **2333 Hz** fundamental. This is the frequency the RPM notch tracks. Cross-check `dshot_telemetry_info` RPM readings against notch positions in Configurator's filter tab to verify. Wrong `motor_poles` shifts all notches by the pole-count ratio — e.g. using 12 instead of 14 shifts notches 14% low, leaving motor noise unfiltered.
+
 | Variable                   | Default     | Range / Values         | Description                                                                                                                                                                                                        |
 | -------------------------- | ----------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `rpm_filter_harmonics`     | 3           | 0–3                    | Number of RPM harmonics to filter per motor. 3 = fundamental + 2nd + 3rd. 0 disables RPM filtering.                                                                                                                |
@@ -450,6 +454,7 @@ Requires bidirectional DSHOT (`dshot_bidir = ON`) and ESC firmware that supports
 | `rpm_filter_min_hz`        | 100         | 30–200                 | Below this frequency, notches are not applied. Lower on larger quads with slower-spinning motors (7"+ reduce to 60–80 Hz).                                                                                         |
 | `rpm_filter_fade_range_hz` | 50          | 0–1000                 | Frequency band over which notches fade in at low throttle, reducing delay at idle.                                                                                                                                 |
 | `rpm_filter_lpf_hz`        | 150         | 100–500                | Post-notch smoothing LPF applied to the RPM signal used for notch tracking.                                                                                                                                        |
+| `dshot_telemetry_info`     | —           | command                | Show per-motor RPM telemetry stats. Use to verify bidirectional DSHOT is working and RPM notches are tracking correctly.                                                                                           |
 
 Also see:
 
@@ -758,20 +763,20 @@ Also see:
 
 Crash recovery detects an uncontrolled crash and attempts to recover. Disabled by default.
 
-| Variable                   | Default           | Range / Values        | Description                                                                   |
-| -------------------------- | ----------------- | --------------------- | ----------------------------------------------------------------------------- |
-| `crash_recovery`           | OFF (per profile) | OFF, ON, BEEP, DISARM | Enable crash recovery. BEEP = recover and beep; DISARM = recover then disarm. |
-| `crash_delay`              | 0 (per profile)   | 0–500 ms              | Delay after arm before crash detection is armed.                              |
-| `crash_time`               | 500 (per profile) | 100–5000 ms           | Minimum crash duration before recovery triggers.                              |
-| `crash_dthreshold`         | 50 (per profile)  | 10–2000               | D-term threshold above which crash is detected (deg/s2).                      |
-| `crash_gthreshold`         | 400 (per profile) | 100–2000              | Gyro rate threshold for crash detection (deg/s).                              |
-| `crash_setpoint_threshold` | 350 (per profile) | 50–2000               | Setpoint threshold for crash detection.                                       |
-| `crash_limit_yaw`          | 200 (per profile) | 0–1000                | Yaw rate limit during crash recovery (deg/s).                                 |
-| `crash_recovery_angle`     | 10 (per profile)  | 5–30 deg              | Maximum recovery correction angle (degrees).                                  |
-| `crash_recovery_rate`      | 100 (per profile) | 50–255 deg/s          | Rate at which the FC tries to recover from a crash.                           |
-| `crashflip_motor_percent`  | 0                 | 0–100                 | Motor output percentage during crash flip / turtle mode. 0 = full power.      |
-| `crashflip_rate`           | 0                 | 0–250                 | Rotation rate limit during crash flip mode (degrees/s). 0 = unlimited.        |
-| `crashflip_auto_rearm`     | OFF               | OFF, ON               | Automatically re-arm after a successful crash flip recovery.                  |
+| Variable                   | Default           | Range / Values        | Description                                                                                                                        |
+| -------------------------- | ----------------- | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `crash_recovery`           | OFF (per profile) | OFF, ON, BEEP, DISARM | Enable crash recovery. BEEP = recover and beep; DISARM = recover then disarm.                                                      |
+| `crash_delay`              | 0 (per profile)   | 0–500 ms              | Delay after arm before crash detection is armed.                                                                                   |
+| `crash_time`               | 500 (per profile) | 100–5000 ms           | Minimum crash duration before recovery triggers.                                                                                   |
+| `crash_dthreshold`         | 50 (per profile)  | 10–2000               | D-term threshold above which crash is detected (deg/s2).                                                                           |
+| `crash_gthreshold`         | 400 (per profile) | 100–2000              | Gyro rate threshold for crash detection (deg/s).                                                                                   |
+| `crash_setpoint_threshold` | 350 (per profile) | 50–2000               | Setpoint threshold for crash detection.                                                                                            |
+| `crash_limit_yaw`          | 200 (per profile) | 0–1000                | Yaw rate limit during crash recovery (deg/s).                                                                                      |
+| `crash_recovery_angle`     | 10 (per profile)  | 5–30 deg              | Maximum recovery correction angle (degrees).                                                                                       |
+| `crash_recovery_rate`      | 100 (per profile) | 50–255 deg/s          | Rate at which the FC tries to recover from a crash.                                                                                |
+| `crashflip_motor_percent`  | 0                 | 0–100                 | Motor output percentage during crash flip / turtle mode. 0 = motors disabled (no flip thrust); set >0 (100 recommended) to enable. |
+| `crashflip_rate`           | 0                 | 0–250                 | Rotation rate limit during crash flip mode (degrees/s). 0 = unlimited.                                                             |
+| `crashflip_auto_rearm`     | OFF               | OFF, ON               | Automatically re-arm after a successful crash flip recovery.                                                                       |
 
 ---
 
