@@ -65,7 +65,7 @@ On top of the core ADRC controller, this implementation adds a few extra mechani
 - **Crash and yaw-spin recovery hygiene** — crash detection (and with it GPS Rescue's crash handling) runs under ADRC even though the classic D gains it used to depend on aren't used. Crash Flip and Crash Recovery both fully reset the ESO/gate state around the recovery episode instead of leaving stale estimates to re-enter control afterward (Crash Flip in particular used to let the ESO learn the turtle-mode command and could open the liftoff gate from it). Yaw-spin recovery suppresses the disturbance estimate through its exit loop so the transition back to normal control doesn't kick a hidden `z3` back in as a sudden I-term jump.
 - **z3 leaky decay** (`adrc_sigma_decay`) — while airborne, z3 bleeds a transient disturbance bump back toward zero at a configurable rate instead of holding it indefinitely. Set to 0 for a classic pure integrator.
 - **Dedicated pre-ESO gyro low-pass** (`adrc_gyro_lpf_hz`) — classic PID's D-term has its own dedicated filter stage on top of the shared base gyro filter; ADRC's control law has no equivalent, and `kp = wc²` makes it more sensitive to whatever noise gets through than classic's linear gain is. This filter runs ahead of the ESO's error calculation only — the shared gyro filter chain upstream of it (dynamic notch, RPM filter, `gyro_lpf1`/`lpf2` static and dynamic lowpass) is untouched by `pid_type` entirely — it lives in the gyro-sampling task, not the PID loop, and runs identically for both control laws.
-- **Tracking differentiator** (`adrc_td_hz`, off by default) — smooths the setpoint feeding the control law's P term before it drives the ESO, instead of feeding it through directly. Only affects what the controller steers toward, not the ESO's own gyro-tracking error. Ported from a separate, independent ADRC implementation ([SeverinBitterli/betaflight](https://github.com/SeverinBitterli/betaflight/tree/ADRC-Implementation)).
+- **Motor pole in the observer** (`adrc_motor_tau_ms`, default 0 = off) — the plain ADRC law treats the motors' response lag as part of the disturbance, which causes roughly 10% overshoot on rate steps at typical `wo·τ`. With the craft's motor time constant τ set, the observer models the motor lag itself instead, and the D gain becomes `2·wc − 1/τ` (floored at `0.5·wc`), removing most of that overshoot at the cost of some phase margin. Roll and pitch only; yaw keeps the plain law. Measure τ with a chirp fit (the [plant fit](https://jmsweng.github.io/ADRC-utils/Plant%20fitting/) tool reports it). If you have to guess, guess high: a τ above the real one only gives part of the benefit, while one below it costs stability margin.
 - **Actually-applied output feedback** — the observer's `b0·u` feedback term is fed the control output that actually reached the plant (post mixer-normalization, saturation, thrust-linearization, and automatic-mode throttle overrides), not the raw pre-mixer PID sum, so mixer clipping/normalization doesn't get misread as plant disturbance. Mixer authority scaling is consumed as a binary "was anything applied at all" signal (zero only when nothing was applied at all — motor-stop, Crash Flip), not as a proportional multiplier — see the [remediation tracker](https://github.com/danusha2345/ADRC-betaflight/blob/master/docs/ADRC_REMEDIATION_TRACKER.md) for why that distinction matters.
 - **Numerical hardening** — the ESO's effective observer bandwidth is capped at runtime (`wo · dT ≤ 0.5`) so a high `adrc_wo` on a slow loop rate can't be pushed into an unstable discretization; `z1`/`z2` carry generous physical bounds purely to stop numerical divergence, wide enough that an ordinary snap/flip never approaches them (unlike `z3`, which is clamped to keep `|I| = |z3/b0|` from exceeding `pidsum_limit` — the ADRC equivalent of classic PID's I-term windup limit, and the only one of the three states that actually accumulates); and any non-finite state (NaN/Inf, possible under `-ffast-math`) is detected and the affected axis reset from the current gyro reading rather than propagating garbage.
 - **Bumpless liftoff-gate handover** — opening the gate (at first liftoff) drops exactly one stale ground-epoch control-output sample instead of feeding it to the observer as `b0·u`, removing a transient that otherwise showed up as a brief oscillation bout right at the moment of takeoff.
@@ -97,11 +97,11 @@ This is per-profile — other profiles keep `pid_type = CLASSIC` (the default) u
 
 This section covers setting up ADRC and getting a first tune flying. It uses two browser-based tools from [ADRC utils](https://jmsweng.github.io/ADRC-utils/):
 
-- **[Plant fit](https://jmsweng.github.io/ADRC-utils/Plant%20fitting/)** — upload a Betaflight blackbox CSV from a chirp flight to identify the roll, pitch and yaw plant and get `b0` estimates as a starting point for tuning.
+- **[Plant fit](https://jmsweng.github.io/ADRC-utils/Plant%20fitting/)** — upload a Betaflight blackbox CSV from a chirp flight to identify the roll, pitch and yaw plant and get `b0` and motor lag estimates as a starting point for tuning.
 - **[Tuning sandbox](https://jmsweng.github.io/ADRC-utils/ADRC%20demo/)** — an interactive step-response simulator. Drag sliders to see how the control parameters influence step response and disturbance recovery, and adjust dynamics such as disturbance magnitude, sensor noise and motor lag.
 
 :::info Firmware version
-This procedure uses `adrc_b0_law` and `adrc_ground_wc`, which were added in the **b11** tester builds. Check that your build has them (`get adrc_ground_wc`) before starting — see the [CLI Reference](#cli-reference).
+This procedure uses `adrc_motor_tau_ms`, `adrc_b0_law` and `adrc_ground_wc`. Check that your build has them (`get adrc_motor_tau_ms`) before starting — see the [CLI Reference](#cli-reference).
 :::
 
 ### TL;DR: I just want to get flying {#tldr}
@@ -117,12 +117,13 @@ This procedure uses `adrc_b0_law` and `adrc_ground_wc`, which were added in the 
   ```
 
 - Disable all PID filters except for motor RPM (see [Disable unnecessary filters](#disable-filters)).
-- Use the [plant fit](https://jmsweng.github.io/ADRC-utils/Plant%20fitting/) tool to obtain `b0` values, with **Proposed wc** set to 80. Make sure the _ctrl-free_ and _eRPM_ values are reasonably close to one another, then use them directly as the `adrc_b0` parameters for each axis. Set `wc` to 80 and `wo` to 90 on each axis:
+- Use the [plant fit](https://jmsweng.github.io/ADRC-utils/Plant%20fitting/) tool to obtain `b0` values, with **Proposed wc** set to 80. Make sure the _ctrl-free_ and _eRPM_ values are reasonably close to one another, then use them directly as the `adrc_b0` parameters for each axis. Use the fitted motor lag as `adrc_motor_tau_ms`. Set `wc` to 80 and `wo` to 90 on each axis:
 
   ```
   set adrc_b0_roll = <calculated_roll_b0>
   set adrc_b0_pitch = <calculated_pitch_b0>
   set adrc_b0_yaw = <calculated_yaw_b0>
+  set adrc_motor_tau_ms = <fitted_motor_lag>
   set adrc_wc_roll = 80
   set adrc_wc_pitch = 80
   set adrc_wc_yaw = 80
@@ -214,7 +215,7 @@ The [interactive tuning sandbox](https://jmsweng.github.io/ADRC-utils/ADRC%20dem
 | `adrc_gyro_lpf_hz`                 | 150                | 0–LPF_MAX_HZ                           | Pre-ESO gyro low-pass cutoff, applied to the gyro signal feeding the ESO's error calculation only (0 = disabled, pass-through). Reduces sensor noise passed to the controller. The shared gyro filters on the Filter tab (dynamic notch, RPM filter, gyro lowpass 1/2) are untouched by this and run identically for both control laws                                                                                                                                                                                                                                                       |
 | `adrc_hover_throttle`              | 35                 | 5–100                                  | Throttle % at hover. Motor authority scales with throttle, so `b0` is scaled above this value using `adrc_b0_law`, clamped to `adrc_b0_scale_max`                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | `adrc_sigma_decay`                 | 3 (=0.3/s)         | 0–100                                  | Airborne z3 decay ×0.1. While airborne, z3 (the ESO's estimated disturbance) bleeds a transient bump back toward zero at this rate instead of holding it indefinitely. 0 = classic pure integrator — default 0.3/s, τ ≈ 3 s                                                                                                                                                                                                                                                                                                                                                                  |
-| `adrc_td_hz`                       | 0                  | 0–LPF_MAX_HZ                           | Tracking-differentiator corner frequency. Smooths inputs before the controller reacts to them, so the motors get a smooth ramp rather than a sharp kick. 0 = disabled. Unvalidated, ported from a third-party ADRC implementation                                                                                                                                                                                                                                                                                                                                                            |
+| `adrc_motor_tau_ms`                | 0                  | 0–100                                  | Motor time constant (ms). When set, the observer models the motor lag itself instead of learning it as a disturbance, and the D gain becomes `2·wc − 1/τ` (floored at `0.5·wc`). Roll and pitch only. 0 = off (plain law). Measure it with a chirp fit; if you must guess, guess high.                                                                                                                                                                                                                                                                                                       |
 | `adrc_liftoff_throttle`            | 40                 | 1–100                                  | Throttle % that alone confirms liftoff (opens the gate). Has no built-in relationship to `adrc_hover_throttle` — set it comfortably above your actual hover throttle once you know it, rather than assuming the default fits your craft. See the liftoff gate note in [How It Works](#how-it-works)                                                                                                                                                                                                                                                                                          |
 | `adrc_liftoff_gyro_dps`            | 20                 | 1–255                                  | Sustained rotation (°/s, any axis) that alone confirms liftoff — the toss-launch path, for when throttle alone hasn't crossed `adrc_liftoff_throttle` yet                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | `adrc_liftoff_hold_ms`             | 25                 | 0–5000                                 | How long the sustained rotation above must hold before it counts as confirming liftoff — filters out brief bumps and handling from being mistaken for a toss launch                                                                                                                                                                                                                                                                                                                                                                                                                          |
@@ -275,6 +276,8 @@ Make sure the fit output looks reasonable: the fit curves should overlap reasona
 
 The fitter reports `b0` matched to the `wc` you entered, so the output values can be used directly as your initial `b0` values with no further adjustment. If you later change `wc`, rerun the fit with the new value to get a matching `b0`.
 
+The fitter also outputs a motor lag value. Set this as `adrc_motor_tau_ms` in the CLI.
+
 :::note Fit warnings
 Occasionally the output includes a warning like:
 
@@ -291,7 +294,7 @@ Filters used by PID control can interact in unexpected ways with ADRC, because t
 
 #### Switch controller and apply parameters
 
-Open the Betaflight CLI and run the following commands, substituting your calculated `b0` values and measured hover throttle:
+Open the Betaflight CLI and run the following commands, substituting your calculated `b0` values, fitted motor lag, and measured hover throttle:
 
 ```
 set pid_type = ADRC
@@ -299,6 +302,7 @@ set adrc_hover_throttle = <your_hover_throttle>
 set adrc_b0_roll = <calculated_roll_b0>
 set adrc_b0_pitch = <calculated_pitch_b0>
 set adrc_b0_yaw = <calculated_yaw_b0>
+set adrc_motor_tau_ms = <fitted_motor_lag>
 set adrc_wc_roll = 80
 set adrc_wc_pitch = 80
 set adrc_wc_yaw = 80
